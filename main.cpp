@@ -24,6 +24,10 @@ using namespace CryptoPP;
 using boost::asio::ip::tcp;
 
 //TODO deal with the problem of nthl(), htnl()
+//TODO add process bar
+//TODO add "agree" progress
+//TODO add available file list
+//TODO add history ip list
 
 asio::ip::address typein_ip_address(){
     string in;
@@ -50,7 +54,7 @@ size_t get_file_size(ifstream &file){
     return end - file.tellg();
 }
 
-string byte_format(int b){
+string byte_format(long long b){
     int round;
     double f = b;
     char num[10];
@@ -106,7 +110,7 @@ int main(){
     SecByteBlock aes_iv(AES::BLOCKSIZE);
     //* about file
     // cout << "$about file" << endl;
-    unsigned int file_size;
+    unsigned long long file_size;
     string file_name;
     string crypt_name;
     
@@ -404,7 +408,7 @@ int main(){
             socket.wait(socket.wait_write);
             file_info = rcv_buf.data();
             file_name = file_info.substr(0, file_info.find(' '));
-            file_size = stoi(file_info.substr(file_info.find(' ')+1, file_info.size()));
+            file_size = stoll(file_info.substr(file_info.find(' ')+1, file_info.size()));
             crypt_name = "cipher_" + file_name + ".crpt";
             cout << "File \"" << file_name << "\"(" << byte_format(file_size) << ") is going to be delivered!" << endl;
             socket.write_some(asio::buffer(ACK));
@@ -420,26 +424,27 @@ int main(){
         //* send file
         // cout << "$send file" << endl;
         ifstream cipher_file;
-        char str[MAX_FRAG+1];
-        int remain_size = file_size;
+        char str[MAX_FRAG];
+        long long remain_size = file_size;
         boost::system::error_code err;
         try{
             cipher_file.open(crypt_name, ios::binary | ios::in);
             if(cipher_file.fail()) exception_exit("something wrong when reopen encrypted file", socket);
             do{
-                memset(str, 0, (MAX_FRAG+1)*sizeof(char));
-                socket.wait(socket.wait_write);
+                memset(str, 0, (MAX_FRAG)*sizeof(char));
                 if(remain_size < MAX_FRAG){
                     cipher_file.read(str, remain_size);
+                    socket.wait(socket.wait_write);
                     size_t s = socket.write_some(asio::buffer(str, remain_size));
                     remain_size -= s;
-                    // cout << "#s=" << s << endl;
+                    cout << "#s=" << s << endl;
                 }
                 else{
                     cipher_file.read(str, MAX_FRAG);
-                    size_t s = socket.write_some(asio::buffer(str));
+                    socket.wait(socket.wait_write);
+                    size_t s = socket.write_some(asio::buffer(str, MAX_FRAG));
                     remain_size -= s;
-                    // cout << "#s=" << s << endl;
+                    cout << "#s=" << s << endl;
                 }
             }while(cipher_file.good() && remain_size > 0);
         }
@@ -466,7 +471,7 @@ int main(){
         //* receive file
         // cout << "$receive file" << endl;
         boost::system::error_code err;
-        char str[MAX_FRAG+1];
+        char str[MAX_FRAG];
         int cur_size = 0;
         try{
             ofstream cipher_file;
@@ -474,14 +479,14 @@ int main(){
             cipher_file.open(crypt_name, ios::binary | ios::out);
             err.clear();
             while(1){
-                memset(str, 0, (MAX_FRAG+1)*sizeof(char));
+                memset(str, 0, (MAX_FRAG)*sizeof(char));
                 socket.wait(socket.wait_read);
                 size_t s = socket.read_some(asio::buffer(str), err);
                 for(int i=0;i<s && cur_size < file_size;i++){
                     cipher_file.write(str+i, 1);
                     cur_size++;
                 }
-                // cout << "#" << s << endl;
+                cout << "#" << s << endl;
                 if(cur_size >= file_size) break;
             }
             socket.wait(socket.wait_write);
