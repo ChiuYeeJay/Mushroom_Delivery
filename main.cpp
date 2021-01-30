@@ -1,8 +1,6 @@
 #include<iostream>
 #include<fstream>
-#include<sstream>
 #include<string>
-#include<set>
 #include<boost/array.hpp>
 #include<boost/asio.hpp>
 #include<cryptopp/aes.h>
@@ -16,7 +14,7 @@
 #define CMD_SER_SEND string("SS")
 #define CMD_SND_INFO string("SI")
 #define ACK string("ACK")
-#define PARSE_BLANK string("\5")
+#define PARSE_BLANK '\5'
 #define MAX_FRAG 1048576
 using namespace boost;
 using namespace std;
@@ -24,10 +22,13 @@ using namespace CryptoPP;
 using boost::asio::ip::tcp;
 
 //TODO deal with the problem of nthl(), htnl()
-//TODO add process bar
+//TODO show byte rate
 //TODO add "agree" progress
 //TODO add available file list
 //TODO add history ip list
+//TODO add setting file
+//TODO delete rcv file when error happened
+//TODO show time consumption
 
 asio::ip::address typein_ip_address(){
     string in;
@@ -74,6 +75,42 @@ string byte_format(long long b){
         ans.append(unit[round]);
     }
     return ans;
+}
+
+void show_progress_bar(const long long file_size, const long long cur_size){
+    static clock_t last_clk;
+    static int last_size;
+    static int last_str_len;
+    string bar, byte_str, size_str, out;
+    clock_t now_clk = clock();
+    double progress_rate;
+    double byte_rate;
+    if(last_size == 0){
+        last_size = cur_size;
+        last_clk = now_clk;
+        progress_rate = cur_size*1.0/file_size;
+        byte_rate = 0;
+    }
+    else{
+        progress_rate = cur_size*1.0/file_size;
+        byte_rate = 1.0*(cur_size-last_size)/((now_clk-last_clk)/CLOCKS_PER_SEC);
+        last_clk = now_clk;
+        last_size = cur_size;
+        while(last_str_len--) printf("\b");
+    }
+
+    bar = "|";
+    for(int i=0;i<20;i++){
+        if(i<progress_rate*20) bar.push_back('#');
+        else bar.push_back('-');
+    }
+    bar.push_back('|');
+    // byte_str = byte_format(round(byte_rate));
+    size_str = to_string(100*progress_rate);
+    size_str = " " + size_str.substr(0, min(size_str.find('.')+2, size_str.size())) + "%";
+    out = bar + size_str;
+    last_str_len = out.size();
+    printf("%s", out.data());
 }
 
 void exception_exit(const char* from, tcp::socket& socket){
@@ -437,16 +474,18 @@ int main(){
                     socket.wait(socket.wait_write);
                     size_t s = socket.write_some(asio::buffer(str, remain_size));
                     remain_size -= s;
-                    cout << "#s=" << s << endl;
+                    // cout << "#s=" << s << endl;
                 }
                 else{
                     cipher_file.read(str, MAX_FRAG);
                     socket.wait(socket.wait_write);
                     size_t s = socket.write_some(asio::buffer(str, MAX_FRAG));
                     remain_size -= s;
-                    cout << "#s=" << s << endl;
+                    // cout << "#s=" << s << endl;
                 }
+                show_progress_bar(file_size, file_size-remain_size);
             }while(cipher_file.good() && remain_size > 0);
+            printf("\n");
         }
         catch(const std::exception &e){
             cerr << e.what() << endl;
@@ -486,9 +525,11 @@ int main(){
                     cipher_file.write(str+i, 1);
                     cur_size++;
                 }
-                cout << "#" << s << endl;
+                // cout << "#" << s << endl;
+                show_progress_bar(file_size, cur_size);
                 if(cur_size >= file_size) break;
             }
+            printf("\n");
             socket.wait(socket.wait_write);
             socket.write_some(asio::buffer(ACK));
         }
