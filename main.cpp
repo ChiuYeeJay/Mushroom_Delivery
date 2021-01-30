@@ -1,6 +1,7 @@
 #include<iostream>
 #include<fstream>
 #include<string>
+#include<chrono>
 #include<boost/array.hpp>
 #include<boost/asio.hpp>
 #include<cryptopp/aes.h>
@@ -16,6 +17,7 @@
 #define ACK string("ACK")
 #define PARSE_BLANK '\5'
 #define MAX_FRAG 1048576
+#define BAR_LENTH 50
 using namespace boost;
 using namespace std;
 using namespace CryptoPP;
@@ -26,7 +28,7 @@ using boost::asio::ip::tcp;
 //TODO add "agree" progress
 //TODO add available file list
 //TODO add history ip list
-//TODO add setting file
+//TODO add setting file (bar's len)
 //TODO delete rcv file when error happened
 //TODO show time consumption
 
@@ -78,13 +80,14 @@ string byte_format(long long b){
 }
 
 void show_progress_bar(const long long file_size, const long long cur_size){
-    static clock_t last_clk;
+    static chrono::steady_clock::time_point last_clk;
     static int last_size;
     static int last_str_len;
     string bar, byte_str, size_str, out;
-    clock_t now_clk = clock();
+    chrono::steady_clock::time_point now_clk = chrono::steady_clock::now();
     double progress_rate;
     double byte_rate;
+    double time_diff;
     if(last_size == 0){
         last_size = cur_size;
         last_clk = now_clk;
@@ -92,23 +95,27 @@ void show_progress_bar(const long long file_size, const long long cur_size){
         byte_rate = 0;
     }
     else{
-        progress_rate = cur_size*1.0/file_size;
-        byte_rate = 1.0*(cur_size-last_size)/((now_clk-last_clk)/CLOCKS_PER_SEC);
-        last_clk = now_clk;
-        last_size = cur_size;
-        while(last_str_len--) printf("\b");
+        time_diff = chrono::duration_cast<chrono::milliseconds>((now_clk-last_clk)).count()/1000.0;
+        if(time_diff < 0.01 && file_size>cur_size) return;
+        else{
+            progress_rate = cur_size*1.0/file_size;
+            byte_rate = 1.0*(cur_size-last_size)/time_diff;
+            last_clk = now_clk;
+            last_size = cur_size;
+            while(last_str_len--) printf("\b");
+        }
     }
 
     bar = "|";
-    for(int i=0;i<20;i++){
-        if(i<progress_rate*20) bar.push_back('#');
+    for(int i=0;i<BAR_LENTH;i++){
+        if(i<progress_rate*BAR_LENTH) bar.push_back('#');
         else bar.push_back('-');
     }
     bar.push_back('|');
-    // byte_str = byte_format(round(byte_rate));
+    byte_str = " " + byte_format(round(byte_rate)) + "/s";
     size_str = to_string(100*progress_rate);
     size_str = " " + size_str.substr(0, min(size_str.find('.')+2, size_str.size())) + "%";
-    out = bar + size_str;
+    out = bar + size_str + byte_str;
     last_str_len = out.size();
     printf("%s", out.data());
 }
